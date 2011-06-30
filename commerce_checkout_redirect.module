@@ -43,7 +43,7 @@ function commerce_checkout_redirect_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('user_register_form'),
     'access callback' => 'user_register_access',
-    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'type' => MENU_LOCAL_TASK,
   );
 
 
