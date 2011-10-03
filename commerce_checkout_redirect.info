@@ -1,7 +1,7 @@
 ; $Id$
 name = Checkout Redirect
 description = Redirects anonymous users on checkout to a user registration/login page to force them to login before checkout
-package = Commerce
+package = Commerce (contrib)
 dependencies[] = commerce
 core = 7.x
 

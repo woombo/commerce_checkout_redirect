@@ -89,6 +89,21 @@ function commerce_checkout_redirect_form_user_login_alter(&$form, &$form_state) 
 }
 
 /**
+ * Implements hook_form_FORM_ID_alter()
+ */
+function commerce_checkout_redirect_form_user_register_form_alter(&$form, &$form_state) {
+  if (arg(0) == 'checkout' && arg(2) == 'user' && arg(3) == 'register' && variable_get('user_email_verification', TRUE) == FALSE) {
+    $form['#submit'][0] = 'commerce_checkout_redirect_user_register_submit';
+  }
+}
+
+function commerce_checkout_redirect_user_register_submit($form, &$form_state) {
+  user_register_submit($form, $form_state);
+  $order_id = arg(1);
+  drupal_goto('checkout/'.$order_id);
+}
+
+/**
  * Callback
  */
 function commerce_checkout_redirect_user_login_submit($form, &$form_state) {
