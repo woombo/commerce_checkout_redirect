@@ -14,7 +14,7 @@ function commerce_checkout_redirect_commerce_checkout_router($order, $checkout_p
 
   if (!$user->uid) {
     drupal_set_message(t('You need to login or create a new account in order to validate your order'), 'status');
-    drupal_goto('checkout/'.$order->order_id.'/user/register');
+    drupal_goto('checkout/' . $order->order_id . '/user/login');
   }
 }
 
