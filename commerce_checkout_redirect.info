@@ -3,6 +3,7 @@ name = Checkout Redirect
 description = Redirects anonymous users on checkout to a user registration/login page to force them to login before checkout
 package = Commerce (contrib)
 dependencies[] = commerce
+dependencies[] = commerce_cart
 core = 7.x
 
 ; Base module files

@@ -1,0 +1,212 @@
+diff --git a/commerce_checkout_redirect.info b/commerce_checkout_redirect.info
+--- a/commerce_checkout_redirect.info
++++ b/commerce_checkout_redirect.info
+@@ -3,6 +3,7 @@ name = Checkout Redirect
+ description = Redirects anonymous users on checkout to a user registration/login page to force them to login before checkout
+ package = Commerce (contrib)
+ dependencies[] = commerce
++dependencies[] = commerce_cart
+ core = 7.x
+ 
+ ; Base module files
+diff --git a/commerce_checkout_redirect.module b/commerce_checkout_redirect.module
+--- a/commerce_checkout_redirect.module
++++ b/commerce_checkout_redirect.module
+@@ -3,116 +3,117 @@
+ 
+ /**
+  * @file
+- * Redirects anonymous users on checkout to a user registration/login page to force them to login before checkout.
++ * Implement the checkout redirect feature.
++ *
++ * Anonymous users are redirected to a page where they can login or create a new account when they try to checkout.
+  */
+ 
+ /**
+- * Implements hook_commerce_checkout_router().
++ * Implements hook_form_FORM_ID_alter().
+  */
+-function commerce_checkout_redirect_commerce_checkout_router($order, $checkout_page) {
+-  global $user;
+-
+-  if (!$user->uid) {
+-    drupal_set_message(t('You need to login or create a new account in order to validate your order'), 'status');
+-    drupal_goto('checkout/' . $order->order_id . '/user/login');
+-  }
+-}
+-
+-/**
+- * Implements hook_menu().
+- **/
+-function commerce_checkout_redirect_menu() {
+-  // Registration and login pages.
+-  $items['checkout/%/user'] = array(
+-    'title' => 'User checkout',
+-    'access callback' => 'user_is_anonymous',
+-    'type' => MENU_CALLBACK,
++function commerce_checkout_redirect_form_commerce_checkout_builder_form_alter(&$form, &$form_state, $form_id) {
++  // Add checkout redirect setting on checkout configuration form.
++  $elements['commerce_checkout_redirect'] = array(
++    '#title' => 'Redirect',
++    '#type' => 'item',
+   );
+-
+-  $items['checkout/%/user/login'] = array(
+-    'title' => 'Log in',
+-    'page callback' => 'user_page',
+-    'access callback' => 'user_is_anonymous',
+-    'file' => 'user.pages.inc',
+-    'file path' => drupal_get_path('module', 'user'),
+-    'type' => MENU_LOCAL_TASK,
++  $elements['commerce_checkout_redirect']['commerce_checkout_redirect_anonymous'] = array(
++    '#title' => 'Enable checkout redirect',
++    '#description' => 'Force users to login before being able to checkout.',
++    '#type' => 'checkbox',
++    '#default_value' => variable_get('commerce_checkout_redirect_anonymous', FALSE),
+   );
+-
+-  $items['checkout/%/user/register'] = array(
+-    'title' => 'Create new account',
+-    'page callback' => 'drupal_get_form',
+-    'page arguments' => array('user_register_form'),
+-    'access callback' => 'user_register_access',
+-    'type' => MENU_LOCAL_TASK,
++  $elements['commerce_checkout_redirect']['commerce_checkout_redirect_url'] = array(
++    '#title' => 'Destination',
++    '#description' => 'Where the user will be redirected to when trying to checkout as anonymous.',
++    '#type' => 'select',
++    '#default_value' => variable_get('commerce_checkout_redirect_url', 'user/login'),
++    '#options' => array('user/login' => 'Login', 'user/register' => 'Register'),
++    '#states' => array(
++      'invisible' => array(
++        ':input[name="commerce_checkout_redirect_anonymous"]' => array('checked' => FALSE),
++      ),
++    ),
+   );
++  $form = $elements + $form;
++  $form['actions']['submit']['#submit'][] = 'commerce_checkout_redirect_settings_submit';
++}
+ 
+-  $items['checkout/%/user/password'] = array(
+-    'title' => 'Request new password',
+-    'page callback' => 'drupal_get_form',
+-    'page arguments' => array('user_pass'),
+-    'access callback' => TRUE,
+-    'type' => MENU_LOCAL_TASK,
+-    'file' => 'user.pages.inc',
+-    'file path' => drupal_get_path('module', 'user'),
+-  );
+-
+-
+-  return $items;
++/**
++ * Save the checkout redirect settings.
++ */
++function commerce_checkout_redirect_settings_submit($form, &$form_state) {
++  variable_set('commerce_checkout_redirect_anonymous', $form_state['values']['commerce_checkout_redirect_anonymous']);
++  variable_set('commerce_checkout_redirect_url', $form_state['values']['commerce_checkout_redirect_url']);
+ }
+ 
+ /**
+- * Implements hook_form_FORM_ID_alter().
++ * Implements hook_commerce_checkout_router().
+  */
+-function commerce_checkout_redirect_form_user_login_alter(&$form, &$form_state) {
+-  if (arg(0) == 'checkout' && arg(2) == 'user' && arg(3) == 'login') {
+-    $form['#submit'][] = 'commerce_checkout_redirect_user_login_submit';
++function commerce_checkout_redirect_commerce_checkout_router($order, $checkout_page) {
++  // Redirect anonymous users to the login/register form.
++  if (variable_get('commerce_checkout_redirect_anonymous', FALSE) && user_is_anonymous()) {
++    $_SESSION['commerce_checkout_redirect_anonymous'] = TRUE;
++    $url = variable_get('commerce_checkout_redirect_url', 'user/login');
++    drupal_set_message(t('You need to be logged in to be able to checkout.'));
++    drupal_goto($url);
+   }
+ }
+ 
+ /**
+  * Implements hook_form_FORM_ID_alter().
+  */
+-function commerce_checkout_redirect_form_user_register_form_alter(&$form, &$form_state) {
+-  if (arg(0) == 'checkout' && arg(2) == 'user' && arg(3) == 'register') {
+-    $form['#submit'][] = 'commerce_checkout_redirect_user_register_submit';
++function commerce_checkout_redirect_form_user_register_form_alter(&$form, &$form_state, $form_id) {
++  $form['#submit'][] = '_commerce_checkout_redirect_user_register';
++}
++
++/**
++ * Redirect users after registration.
++ */
++function _commerce_checkout_redirect_user_register($form, &$form_state) {
++  if (variable_get('commerce_checkout_redirect_anonymous', FALSE)) {
++    _commerce_checkout_redirect_redirect($form_state);
+   }
+ }
+ 
+ /**
+- * User register submit callback.
++ * Implements hook_user_login().
+  *
+- * If e-mail verification is required, redirect user to the login page cause he
+- * won't be able to continue checkout process.
++ * Redirect users after logging in.
+  */
+-function commerce_checkout_redirect_user_register_submit($form, &$form_state) {
+-  user_register_submit($form, $form_state);
+-  $order_id = commerce_cart_order_id();
+-  $user_email_verification = variable_get('user_email_verification', TRUE);
+-  if ($user_email_verification) {
+-    $form_state['redirect'] = 'checkout/' . $order_id . '/user/login';
+-  }
+-  else {
+-    $form_state['redirect'] = 'checkout/' . $order_id;
++function commerce_checkout_redirect_user_login(&$edit, $account) {
++  // Drupal do not allow user redirection after registration using this hook.
++  // It happen in _commerce_checkout_redirect_user_register().
++  if ($edit['build_info']['form_id'] != 'user_register_form' && variable_get('commerce_checkout_redirect_anonymous', FALSE)) {
++    _commerce_checkout_redirect_redirect($edit);
+   }
+ }
+ 
+ /**
+- * Callback
++ * Redirect to checkout.
++ *
++ * @param $form_state
+  */
+-function commerce_checkout_redirect_user_login_submit($form, &$form_state) {
+-  global $user;
+-  $user = user_load($form_state['uid']);
+-
+-  $order_id = commerce_cart_order_id();
+-  $form_state['redirect'] = 'checkout/' . $order_id;
+-  user_login_finalize($form_state);
++function _commerce_checkout_redirect_redirect(&$form_state) {
++  if (!user_is_anonymous()) {
++    global $user;
++    $order_id = commerce_cart_order_id($user->uid);
++    if ($_SESSION['commerce_checkout_redirect_anonymous'] && $order_id) {
++      unset($_SESSION['commerce_checkout_redirect_anonymous']);
++      $form_state['redirect'] = url('checkout');
++    }
++  }
+ }
+ 
+ /**
+- * Implements hook_form_FORM_ID_alter().
++ * Implements hook_module_implements_alter().
+  */
+-function commerce_checkout_redirect_form_user_pass_alter(&$form, &$form_state) {
+-  if (arg(0) == 'checkout' && arg(2) == 'user' && arg(3) == 'password') {
+-    $form['#submit'][] = 'commerce_checkout_redirect_user_login_submit';
++function commerce_checkout_redirect_module_implements_alter(&$implementations, $hook) {
++  // We need our hook_user_login to happen after order has been converted (commerce_cart_user_login).
++  if (in_array($hook, array('user_login'))) {
++    // Move our hook implementation to the bottom.
++    $group = $implementations['commerce_checkout_redirect'];
++    unset($implementations['commerce_checkout_redirect']);
++    $implementations['commerce_checkout_redirect'] = $group;
+   }
+-}
++}
+\ No newline at end of file
